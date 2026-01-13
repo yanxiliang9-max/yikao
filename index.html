@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>考试年限自查系统</title>
+    <style>
+        /* --- 1. 全局配置 --- */
+        :root {
+            --primary-blue: #007AFF;
+            --primary-green: #00C853;
+            --bg-color: #F5F7FA;
+            --text-main: #333;
+            --border-color: #E5E5E5;
+        }
+
+        body {
+            margin: 0; padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior: none; /* 防止页面整体回弹 */
+        }
+
+        .page-container { min-height: 100vh; display: flex; flex-direction: column; }
+        .hidden { display: none !important; }
+
+        /* --- Banner & Card --- */
+        .banner-area {
+            background: linear-gradient(180deg, #E6F2FF 0%, #FFFFFF 100%);
+            padding: 50px 20px 90px 20px;
+            text-align: center;
+        }
+        .banner-title { font-size: 34px; font-weight: 900; color: #0056D2; margin: 0; text-shadow: 2px 2px 0px rgba(255,255,255,1); }
+        .banner-subtitle { display: inline-block; background: #FF9F0A; color: white; padding: 6px 16px; border-radius: 20px; font-size: 15px; font-weight: bold; margin-top: 12px; }
+
+        .main-card {
+            background: #FFFFFF;
+            margin: -50px 15px 20px 15px;
+            padding: 30px 20px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 86, 210, 0.08);
+            position: relative;
+        }
+        .main-card::before { content: ''; position: absolute; top: 0; left: 20px; right: 20px; height: 4px; background: rgba(0, 122, 255, 0.2); border-radius: 0 0 4px 4px; }
+
+        .form-row { margin-bottom: 24px; }
+        .form-label { font-size: 15px; font-weight: 700; color: #555; margin-bottom: 10px; display: block; }
+        
+        .picker-trigger {
+            width: 100%; height: 50px; line-height: 50px; padding: 0 15px;
+            border: 1px solid var(--border-color); border-radius: 8px;
+            background: #F8F9FB; font-size: 16px; color: #333;
+            box-sizing: border-box; position: relative; cursor: pointer;
+        }
+        .picker-trigger::after { content: '▼'; position: absolute; right: 15px; color: #BBB; font-size: 12px; top: 0; }
+        .picker-trigger.placeholder { color: #999; }
+
+        .submit-btn {
+            width: 100%; height: 50px; background: linear-gradient(90deg, #007AFF 0%, #0056D2 100%);
+            color: white; border: none; border-radius: 25px; font-size: 18px; font-weight: bold; margin-top: 15px;
+        }
+
+        /* --- 弹窗通用 --- */
+        .sheet-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4); z-index: 1000;
+            display: none; opacity: 0; transition: opacity 0.3s;
+        }
+        .sheet-overlay.show { display: block; opacity: 1; }
+
+        .sheet-content {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            background: #FFF;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex; flex-direction: column;
+            overflow: hidden; /* 防止圆角被内部内容遮挡 */
+        }
+        .sheet-overlay.show .sheet-content { transform: translateY(0); }
+
+        /* 列表选择器样式 */
+        .list-header { padding: 15px; text-align: center; font-size: 16px; font-weight: bold; color: #333; border-bottom: 1px solid #EEE; }
+        .list-body { overflow-y: auto; max-height: 300px; -webkit-overflow-scrolling: touch; }
+        .list-item { padding: 16px; text-align: center; font-size: 16px; border-bottom: 1px solid #F5F5F5; color: #333; }
+        .list-item:active { background: #F0F0F0; }
+
+        /* --- 修复后的日期选择器样式 --- */
+        
+        /* 1. 标题栏 */
+        .picker-header-title {
+            text-align: center; font-size: 16px; font-weight: bold; color: #333;
+            padding: 15px 0; border-bottom: 1px solid #F0F0F0; background: #FFF;
+        }
+
+        .date-picker-body {
+            height: 250px; /* 固定高度 */
+            display: flex; position: relative; background: #FFF;
+            overflow: hidden;
+            mask-image: linear-gradient(to bottom, transparent, black 20%, black 80%, transparent);
+            -webkit-mask-image: linear-gradient(to bottom, transparent, black 20%, black 80%, transparent);
+        }
+
+        /* 选中高亮条 */
+        .picker-highlight {
+            position: absolute; top: 50%; left: 0; right: 0; height: 40px; margin-top: -20px;
+            background: rgba(0,0,0,0.04);
+            border-top: 1px solid #EEE; border-bottom: 1px solid #EEE;
+            pointer-events: none; z-index: 10;
+        }
+
+        .picker-col {
+            flex: 1; height: 100%;
+            overflow-y: scroll; 
+            /* 关键修复1: 开启吸附效果 */
+            scroll-snap-type: y mandatory; 
+            -webkit-overflow-scrolling: touch;
+            
+            /* 关键修复3: 增加足够的上下留白，确保首尾能居中 */
+            /* 容器高250，中间高40，(250-40)/2 = 105px */
+            padding-top: 105px; 
+            padding-bottom: 105px;
+            box-sizing: border-box; 
+        }
+        
+        /* 隐藏滚动条 */
+        .picker-col::-webkit-scrollbar { display: none; }
+        
+        .picker-cell {
+            height: 40px; line-height: 40px; text-align: center; font-size: 16px; color: #999;
+            /* 关键修复1: 子元素对齐 */
+            scroll-snap-align: center; 
+        }
+        .picker-cell.active-cell { color: #000; font-weight: bold; font-size: 18px; }
+
+        .sheet-footer-btns {
+            display: flex; justify-content: space-between; padding: 15px 20px;
+            background: #FFF; border-top: 1px solid #F0F0F0;
+            padding-bottom: calc(15px + constant(safe-area-inset-bottom));
+            padding-bottom: calc(15px + env(safe-area-inset-bottom));
+        }
+        .btn-cancel { width: 45%; height: 44px; line-height: 44px; text-align: center; background: #F5F5F5; color: #666; border-radius: 4px; font-weight: bold; }
+        .btn-confirm { width: 45%; height: 44px; line-height: 44px; text-align: center; background: var(--primary-green); color: white; border-radius: 4px; font-weight: bold; }
+
+        /* 结果页 */
+        #result-view { background: #FFF; }
+        .result-header { height: 200px; background: linear-gradient(135deg, #007AFF, #00C6FF); color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; border-bottom-left-radius: 30px; border-bottom-right-radius: 30px; margin-bottom: 30px; }
+        .result-detail-box { background: #F8FBFF; border: 2px dashed #DCEFFF; border-radius: 12px; padding: 20px; margin: 0 20px 30px; text-align: center;}
+        .back-btn { display: block; width: 80%; margin: 0 auto; height: 48px; border: 2px solid #007AFF; color: #007AFF; border-radius: 24px; background: none; font-size: 16px; font-weight: bold;}
+    </style>
+</head>
+<body>
+
+    <div id="listSheet" class="sheet-overlay" onclick="closeListSheet()">
+        <div class="sheet-content" onclick="event.stopPropagation()">
+            <div class="list-header" id="listSheetTitle">请选择</div>
+            <div class="list-body" id="listSheetBody"></div>
+        </div>
+    </div>
+
+    <div id="dateSheet" class="sheet-overlay" onclick="closeDateSheet()">
+        <div class="sheet-content" onclick="event.stopPropagation()">
+            <div class="picker-header-title">选择时间</div>
+            
+            <div class="date-picker-body">
+                <div class="picker-highlight"></div>
+                <div class="picker-col" id="colYear"></div>
+                <div class="picker-col" id="colMonth"></div>
+                <div class="picker-col" id="colDay"></div>
+            </div>
+            
+            <div class="sheet-footer-btns">
+                <div class="btn-cancel" onclick="closeDateSheet()">取消</div>
+                <div class="btn-confirm" onclick="confirmDate()">确定</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="input-view" class="page-container">
+        <div class="banner-area">
+            <h1 class="banner-title">考试年限自查系统</h1>
+            <div class="banner-subtitle">口腔医师考试</div>
+        </div>
+
+        <div class="main-card">
+            <div class="form-row">
+                <label class="form-label">报考专业</label>
+                <div class="picker-trigger" id="examTrigger" onclick="openExamPicker()">口腔助理医师</div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">最高学历</label>
+                <div class="picker-trigger" id="degreeTrigger" onclick="openDegreePicker()">中专</div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">毕业/注册时间</label>
+                <div class="picker-trigger placeholder" id="dateTrigger" onclick="openDatePicker()">请选择时间</div>
+            </div>
+            <button class="submit-btn" onclick="checkEligibility()">点击免费查询</button>
+        </div>
+
+        <div style="text-align: center; color: #999; font-size: 12px; margin-top: 30px;">
+            本次审核结果仅供参考<br>具体报名条件请结合当地卫健委政策
+        </div>
+    </div>
+
+    <div id="result-view" class="page-container hidden">
+        <div class="result-header">
+            <div style="font-size: 50px; margin-bottom: 10px;" id="resIcon"></div>
+            <div style="font-size: 24px; font-weight: bold;" id="resTitle"></div>
+        </div>
+        <div class="result-detail-box">
+            <div id="resDesc" style="color: #333; font-size: 15px; line-height: 1.6;"></div>
+        </div>
+        <button class="back-btn" onclick="goBack()">返回重新测试</button>
+        <div style="text-align:center; margin-top:20px; color:#ccc; font-size:12px;">以上内容仅供参考</div>
+    </div>
+
+    <script>
+        // --- 核心逻辑 ---
+        const CUTOFF_DATES_2026 = {
+            assistant: { tech_school: "2012-12-31", college: "2025-06-30" },
+            licensed: { tech_school: "2021-08-31", college: "2024-08-31", bachelor: "2025-06-30", master: "2025-06-30", phd: "2025-06-30" },
+            attending: { tech_school: "2018-12-31", college: "2019-12-31", bachelor: "2021-12-31" }
+        };
+        const EXAM_NAMES = { assistant: "口腔助理医师", licensed: "口腔执业医师", attending: "口腔主治医师" };
+        const DEGREE_NAMES = { tech_school: "中专", college: "大专", bachelor: "本科", master: "研究生 (硕/博)", phd: "博士" };
+
+        let currentExam = "assistant";
+        let currentDegree = "tech_school";
+        let selectedDate = null;
+
+        // --- 列表选择逻辑 ---
+        function openExamPicker() {
+            const list = [
+                { val: "assistant", text: "口腔助理医师" },
+                { val: "licensed", text: "口腔执业医师" },
+                { val: "attending", text: "口腔主治医师" }
+            ];
+            renderListSheet("选择报考专业", list, currentExam, (val, text) => {
+                currentExam = val;
+                document.getElementById('examTrigger').innerText = text;
+                resetDegree();
+            });
+        }
+        function openDegreePicker() {
+            let list = [];
+            if (currentExam === 'assistant') {
+                list = [{ val: "tech_school", text: "中专" }, { val: "college", text: "大专" }];
+            } else {
+                list = [
+                    { val: "tech_school", text: "中专" }, { val: "college", text: "大专" },
+                    { val: "bachelor", text: "本科" }, { val: "master", text: "研究生 (硕/博)" },
+                    { val: "phd", text: "博士" }
+                ];
+            }
+            renderListSheet("选择最高学历", list, currentDegree, (val, text) => {
+                currentDegree = val;
+                document.getElementById('degreeTrigger').innerText = text;
+            });
+        }
+        function renderListSheet(title, list, activeVal, callback) {
+            document.getElementById('listSheetTitle').innerText = title;
+            const body = document.getElementById('listSheetBody');
+            body.innerHTML = '';
+            list.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'list-item';
+                div.innerText = item.text;
+                if(item.val === activeVal) div.style.color = '#007AFF';
+                div.onclick = () => {
+                    callback(item.val, item.text);
+                    closeListSheet();
+                };
+                body.appendChild(div);
+            });
+            const sheet = document.getElementById('listSheet');
+            sheet.style.display = 'block';
+            setTimeout(() => sheet.classList.add('show'), 10);
+        }
+        function closeListSheet() {
+            const sheet = document.getElementById('listSheet');
+            sheet.classList.remove('show');
+            setTimeout(() => sheet.style.display = 'none', 300);
+        }
+        function resetDegree() {
+            if (currentExam === 'assistant' && ['bachelor', 'master', 'phd'].includes(currentDegree)) {
+                currentDegree = 'tech_school';
+            }
+            document.getElementById('degreeTrigger').innerText = DEGREE_NAMES[currentDegree];
+        }
+
+        // --- 日期选择逻辑 (修复版) ---
+        function openDatePicker() {
+            const sheet = document.getElementById('dateSheet');
+            initDateColumns();
+            sheet.style.display = 'block';
+            setTimeout(() => sheet.classList.add('show'), 10);
+        }
+        function closeDateSheet() {
+            const sheet = document.getElementById('dateSheet');
+            sheet.classList.remove('show');
+            setTimeout(() => sheet.style.display = 'none', 300);
+        }
+
+        function initDateColumns() {
+            const now = new Date();
+            const targetDate = selectedDate || now;
+            // 渲染数据
+            renderColumn('colYear', 1990, 2030, targetDate.getFullYear(), '年');
+            renderColumn('colMonth', 1, 12, targetDate.getMonth() + 1, '月');
+            renderColumn('colDay', 1, 31, targetDate.getDate(), '日');
+        }
+
+        function renderColumn(colId, min, max, activeVal, unit) {
+            const col = document.getElementById(colId);
+            col.innerHTML = '';
+            for (let i = min; i <= max; i++) {
+                const div = document.createElement('div');
+                div.className = 'picker-cell';
+                div.innerText = i + unit;
+                col.appendChild(div);
+            }
+            // 滚动到指定位置 (index * 40px)
+            const index = activeVal - min;
+            // 使用 setTimeout 确保渲染完再滚，避免 CSS Snap 冲突
+            setTimeout(() => {
+                col.scrollTop = index * 40;
+            }, 0);
+        }
+
+        function confirmDate() {
+            const year = getValFromScroll('colYear', 1990);
+            const month = getValFromScroll('colMonth', 1);
+            const day = getValFromScroll('colDay', 1);
+
+            const dateObj = new Date(year, month - 1, day);
+            selectedDate = dateObj;
+
+            const str = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const trigger = document.getElementById('dateTrigger');
+            trigger.innerText = str;
+            trigger.classList.remove('placeholder');
+
+            closeDateSheet();
+        }
+
+        function getValFromScroll(colId, minVal) {
+            const col = document.getElementById(colId);
+            const scroll = col.scrollTop;
+            // 40px 一个高，四舍五入获取最近的索引
+            const index = Math.round(scroll / 40);
+            return minVal + index;
+        }
+
+        // --- 判定逻辑 ---
+        function checkEligibility() {
+            if (!selectedDate) { alert("请选择时间！"); return; }
+            let cutoffStr = (currentExam === 'attending' && (currentDegree === 'master' || currentDegree === 'phd')) 
+                            ? "2021-12-31" : CUTOFF_DATES_2026[currentExam][currentDegree];
+            
+            if (!cutoffStr) { alert("暂无规则"); return; }
+            
+            const cutoffDate = new Date(cutoffStr);
+            const examName = EXAM_NAMES[currentExam];
+            const resIcon = document.getElementById('resIcon');
+            const resTitle = document.getElementById('resTitle');
+            const resDesc = document.getElementById('resDesc');
+            const header = document.querySelector('.result-header');
+
+            if (selectedDate <= cutoffDate) {
+                header.style.background = 'linear-gradient(135deg, #28C76F, #48DA89)';
+                resIcon.innerText = '✅';
+                resTitle.innerText = "恭喜！符合条件";
+                resDesc.innerHTML = `根据2026年最新规定：<br>您的年限已满足<strong>${examName}</strong>的报考要求。<br><br>请做好备考准备！`;
+            } else {
+                header.style.background = 'linear-gradient(135deg, #EA5455, #FF7576)';
+                resIcon.innerText = '⚠️';
+                resTitle.innerText = "暂不符合条件";
+                const diffTime = selectedDate - cutoffDate;
+                const diffYears = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 365.25));
+                resDesc.innerHTML = `根据年限推算：<br>您目前年限不足。<br><br>您预计可报考 <strong>${2026 + diffYears}年</strong> 的${examName}考试。`;
+            }
+            document.getElementById('input-view').classList.add('hidden');
+            document.getElementById('result-view').classList.remove('hidden');
+        }
+
+        function goBack() {
+            document.getElementById('input-view').classList.remove('hidden');
+            document.getElementById('result-view').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
