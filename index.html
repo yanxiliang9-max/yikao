@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>考试年限自查系统</title>
     <style>
-        /* --- 1. 全局配置 (保持不变) --- */
+        /* --- 1. 全局配置 --- */
         :root {
             --primary-blue: #007AFF;
             --primary-green: #00C853;
@@ -144,7 +144,7 @@
                 <div class="picker-trigger" id="examTrigger" onclick="openExamPicker()">口腔助理医师</div>
             </div>
             <div class="form-row">
-                <label class="form-label">最高学历</label>
+                <label class="form-label" id="degreeLabel">最高学历</label>
                 <div class="picker-trigger" id="degreeTrigger" onclick="openDegreePicker()">中专</div>
             </div>
             <div class="form-row">
@@ -181,40 +181,37 @@
             attending: "口腔主治医师"
         };
 
-        // 2. 定义学历名称 (已修改：研究生文案调整)
+        // 2. 定义学历名称
         const DEGREE_MAP = {
             tech_school: "中专",
             college: "大专",
             bachelor: "本科",
-            master: "研究生", // 修改：去掉(硕/博)
+            master: "研究生",
             phd: "博士"
         };
 
         // 3. 核心判定规则表
-        // cutoff: 截止日期（在该日期之前满足条件才行）
-        // type: "graduation" (毕业时间) 或 "registration" (注册时间)
-        // hardFail: 中专特殊逻辑，如果是true，则不进行年份推算，直接提示不能报名
         const RULES = {
             // 一、口腔助理医师
             assistant: {
-                degrees: ['tech_school', 'college'], // 只允许中专和大专
+                degrees: ['tech_school', 'college'],
                 rules: {
-                    tech_school: { cutoff: "2012-12-31", type: "graduation", hardFail: true }, // 2013年之前
-                    college:     { cutoff: "2025-08-31", type: "graduation", hardFail: false } // 2025.9.1之前
+                    tech_school: { cutoff: "2012-12-31", type: "graduation", hardFail: true }, 
+                    college:     { cutoff: "2025-08-31", type: "graduation", hardFail: false }
                 }
             },
-            // 二、口腔执业医师 (已修改：去掉了研究生和博士)
+            // 二、口腔执业医师
             licensed: {
-                degrees: ['tech_school', 'college', 'bachelor'], // 只剩三项
+                degrees: ['tech_school', 'college', 'bachelor'],
                 rules: {
-                    tech_school: { cutoff: "2021-08-31", type: "registration", hardFail: true },
+                    tech_school: { cutoff: "2021-08-31", type: "registration", hardFail: false },
                     college:     { cutoff: "2024-08-31", type: "registration", hardFail: false },
                     bachelor:    { cutoff: "2025-08-31", type: "graduation",   hardFail: false }
                 }
             },
-            // 三、口腔主治医师 (已修改：去掉了博士)
+            // 三、口腔主治医师
             attending: {
-                degrees: ['tech_school', 'college', 'bachelor', 'master'], // 去掉了phd
+                degrees: ['tech_school', 'college', 'bachelor', 'master'],
                 rules: {
                     tech_school: { cutoff: "2018-12-31", type: "registration", hardFail: false },
                     college:     { cutoff: "2019-12-31", type: "registration", hardFail: false },
@@ -241,18 +238,15 @@
             renderListSheet("选择报考专业", list, currentExam, (val, text) => {
                 currentExam = val;
                 document.getElementById('examTrigger').innerText = text;
-                resetDegree(); // 重置学历
-                updateLabel(); // 更新标签
+                resetDegree();
+                updateLabels(); // 更新所有标签 (包含学历标签)
             });
         }
 
         // 2. 切换学历时
         function openDegreePicker() {
-            // 根据当前考试类型，过滤允许的学历
             const allowedDegrees = RULES[currentExam].degrees;
             let list = [];
-            
-            // 构建列表 (确保按顺序)
             const allDegrees = ['tech_school', 'college', 'bachelor', 'master', 'phd'];
             allDegrees.forEach(key => {
                 if(allowedDegrees.includes(key)) {
@@ -263,31 +257,39 @@
             renderListSheet("选择最高学历", list, currentDegree, (val, text) => {
                 currentDegree = val;
                 document.getElementById('degreeTrigger').innerText = text;
-                updateLabel(); // 更新标签
+                updateLabels();
             });
         }
 
-        // 3. 逻辑：重置学历（当切换考试类型后，如果当前学历不合法，重置为列表第一个）
+        // 3. 逻辑：重置学历
         function resetDegree() {
             const allowedDegrees = RULES[currentExam].degrees;
             if (!allowedDegrees.includes(currentDegree)) {
-                currentDegree = allowedDegrees[0]; // 默认选第一个（通常是中专）
+                currentDegree = allowedDegrees[0];
                 document.getElementById('degreeTrigger').innerText = DEGREE_MAP[currentDegree];
             }
         }
 
-        // 4. 逻辑：更新日期标签 (毕业时间 vs 注册时间)
-        function updateLabel() {
-            const rule = RULES[currentExam].rules[currentDegree];
-            const labelEl = document.getElementById('dateLabel');
-            
-            // 主治医师统一显示注册时间，其他根据配置
-            if (currentExam === 'attending') {
-                labelEl.innerText = "请选择执业证注册时间";
-            } else if (rule && rule.type === 'graduation') {
-                labelEl.innerText = "请选择您毕业时间";
+        // 4. 逻辑：更新页面上的标签 (日期 + 学历)
+        function updateLabels() {
+            // A. 更新学历标签 (添加 "全日制" 标识)
+            const degreeLabel = document.getElementById('degreeLabel');
+            if (currentExam === 'assistant' || currentExam === 'licensed') {
+                degreeLabel.innerText = "最高学历 (全日制)";
             } else {
-                labelEl.innerText = "请选择执业证注册时间";
+                degreeLabel.innerText = "最高学历";
+            }
+
+            // B. 更新日期标签
+            const rule = RULES[currentExam].rules[currentDegree];
+            const dateLabel = document.getElementById('dateLabel');
+            
+            if (currentExam === 'attending') {
+                dateLabel.innerText = "请选择执业证注册时间";
+            } else if (rule && rule.type === 'graduation') {
+                dateLabel.innerText = "请选择您毕业时间";
+            } else {
+                dateLabel.innerText = "请选择执业证注册时间";
             }
         }
 
@@ -395,7 +397,6 @@
                 resIcon.innerText = '⚠️';
                 resTitle.innerText = "暂不符合报考条件";
                 
-                // 判断是否是中专/特殊硬性限制
                 if (rule.hardFail) {
                     resDesc.innerHTML = `很抱歉！<br>您无法报考2026年<strong>${examName}</strong>考试。<br><br>(学历年限已超过政策限制)`;
                 } else {
@@ -417,7 +418,7 @@
         }
 
         // 初始化
-        updateLabel();
+        updateLabels();
     </script>
 </body>
 </html>
